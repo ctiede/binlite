@@ -82,8 +82,9 @@ class BinaryAlphaDisk:
         self.i = inclination_deg * (np.pi / 180.) # NOTE: consistent for boosting
         self.a = semi_major_axis(self.p, self.m)
         self.ecc = eccentricity
-        self.mdot = eddington_ratio * self.__eddington_accretion_rate(self.m, accretion_efficiency)
-        self.qfac = 1.0 if retrograde else Qfit(eccentricity)
+        self.mdot = eddington_ratio * eddington_accretion_rate(self.m, accretion_efficiency)
+        # self.qfac = 1.0 if retrograde else Qfit(eccentricity)
+        self.qfac = Qfit(eccentricity, retrograde)
         self.dlum = luminosity_distance_pc * pc2cm
         self.m1  = self.m  / (1.0 + self.q)
         self.m2  = self.m1 * self.q
@@ -485,8 +486,9 @@ def normalized_flux_series_from_bad(frequency:float, accretion_series:AccretionS
     mag1 = bad.lensing_boosting_magnification(acc.time, fs=0, boosting=boosting, lensing=lensing) if bad.i!=0 else 1.0
     mag2 = bad.lensing_boosting_magnification(acc.time, fs=1, boosting=boosting, lensing=lensing) if bad.i!=0 else 1.0
     disk_flux = 1.0 - chi1 - chi2
-    mdot_mean = np.mean(acc.total)
-    return chi1 * acc.primary / mdot_mean * mag1 + chi2 * acc.secondary / mdot_mean * mag2 + disk_flux
+    dm1 = acc.primary
+    dm2 = acc.secondary
+    return chi1 * dm1 / np.mean(dm1) * mag1 + chi2 * dm2 / np.mean(dm2) * mag2 + disk_flux
 
 def periodic_flux_series_from_bad(frequency:float, accretion_series:AccretionSeries, bad:BinaryAlphaDisk, boosting=False, lensing=False):
     """Generate a periodic flux timeseries at given frequency from a BinaryAlphaDisk object
@@ -528,8 +530,6 @@ def magnitude_from_flux(specific_flux, zero_point_flux):
 
 
 # To test script by running the module as a script: python -m binlite.flux
-#  - Generates plots to compare with Fig. 7 
-#    in D'Orazio, Duffell & Tiede (2024)
 #  - requires extra matplotlib dependency
 # =============================================================================
 if __name__ == '__main__':
@@ -556,3 +556,39 @@ if __name__ == '__main__':
         ax1.set_title(r'e = {:.2f}'.format(acc.ecc))
         plt.show()
         plt.close()
+
+
+    # e = 0.7
+    # f = vband_nu
+    # acc = AccretionSeries(e, n_modes=29, n_orbits=3, retrograde=False)
+    # bad = BinaryAlphaDisk(e, p_yr, m_msun, dl_pc, eddington_ratio=fedd, retrograde=acc.is_retro)
+    # yrs = time_from_bad(acc, bad)
+    # flux_tot = normalized_flux_series_from_bad(f, acc, bad)
+    # chi1 = bad.primary_flux_ratio(f)
+    # chi2 = bad.secondary_flux_ratio(f)
+    # print(chi1, chi2, bad.disk_flux_ratio(f))
+    # mag1 = bad.lensing_boosting_magnification(acc.time, fs=0, boosting=boosting, lensing=lensing) if bad.i!=0 else 1.0
+    # mag2 = bad.lensing_boosting_magnification(acc.time, fs=1, boosting=boosting, lensing=lensing) if bad.i!=0 else 1.0
+    # disk_flux = 1.0 - chi1 - chi2
+    # mdot_mean = np.mean(acc.total)
+    # mdot1 = np.mean(acc.primary)
+    # mdot2 = np.mean(acc.secondary)
+    # flux_prim = chi1 * acc.primary / mdot1  * mag1
+    # flux_secd = chi2 * acc.secondary / mdot2 * mag2
+    # flux_tot2 = flux_prim + flux_secd + disk_flux
+    # plt.plot(yrs, flux_prim, 'C1--', label='prim')
+    # plt.plot(yrs, flux_secd, 'C4--', label='secd')
+    # plt.plot(yrs, flux_tot , 'k-'  , label='old tot')
+    # plt.plot(yrs, flux_tot2, 'C0-' , label='new tot')
+    # plt.axhline(disk_flux, color='C5', ls=':', label='cbd')
+    # plt.axhline(chi1, color='C1', ls=':')
+    # plt.axhline(chi2, color='C4', ls=':')
+    # plt.xlim([0.0, yrs[-1]])
+    # # plt.ylim([0.0, 1.2])
+    # plt.ylabel(r'normalized flux, $F_\nu\ /\ \langle F_\nu^{\rm tot} \rangle$')
+    # plt.xlabel('years')
+    # plt.title(r'e = {:.2f}'.format(acc.ecc))
+    # plt.legend()
+    # plt.savefig('binlite_noramlized_flux_e07.png', dpi=400, bbox_inches='tight', pad_inches=0.05)
+    # plt.show()
+
