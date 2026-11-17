@@ -7,7 +7,7 @@ from .accretion import AccretionSeries, Qfit
 
 # ===================================================================
 class BinaryAlphaDisk:
-    """Helper class for generating periodic flux curves from accretion onto equal-mass eccentric binaries
+    """Helper class for generating periodic flux curves from accretion onto eccentric (equal-mass for now) binaries
 
     Parameters
     ----------
@@ -24,7 +24,7 @@ class BinaryAlphaDisk:
     accretion_efficiency (optional, default=0.1):
         efficiency at which gravitational energy is converted to radiation
     md_inner_edge_risco (optional, default=1.0):
-        inner edge of the primary component's minidisk in units of the isco-radius
+        inner edge of each minidisk in units of its isco-radius
         for integrating the minidisk spectrum
     cbd_inner_edge_a (optional, default=2.0):
         inner edge of the circumbinary disk in units of the binary semi-major axis distance
@@ -38,13 +38,17 @@ class BinaryAlphaDisk:
     barycenter_velocity_c (optional, default=0.0):
         line-of-sight velocity of the system barycenter in units of c (speed of light)
         setting >= 1 may cause problems
-    argumnet_of_pericenter (optional, default=0.0):
+    argument_of_pericenter_deg (optional, default=0.0):
         argument of pericenter for eccentric binary orbit (see D'Orazio, Duffell & Tiede 2024)
     spectral_slope_lnln (optional, default=-1.0):
         dlog(Fnu)/dlog(nu) of the emitting spectrum in the observing band for boosting
     geometric_dimming (optional, default=False):
         include dimming due to the geometrical projection associated with inclination i
         set to True for standard blackbody disk
+    retrograde (optional, default=False):
+        flag for a retrograde configuration
+    mass_ratio (optional, default=1.0):
+        secondary-to-primary mass ratio q (0 < q <= 1) [currently does nothing -- placeholder for coming updates]
 
     Public methods
     --------------
@@ -72,33 +76,32 @@ class BinaryAlphaDisk:
                  barycenter_velocity_c:float=0.0, 
                  argument_of_pericenter_deg:float=0.0,
                  spectral_slope_lnln:float=-1.0,
-                 geometric_dimming:int=False,
-                 retrograde:int=False,
+                 geometric_dimming:bool=False,
+                 retrograde:bool=False,
                  mass_ratio:float=1.0, # 0 < q < 1; be careful when using with acc. variability because changes iscos/inner boundary temps
                  ):
         self.q = mass_ratio
         self.p = period_yr * yr2sec
         self.m = total_mass_msun * Msun_cgs
         self.i = inclination_deg * (np.pi / 180.) # NOTE: consistent for boosting
-        self.a = semi_major_axis(self.p, self.m)
+        self.a = _semi_major_axis(self.p, self.m)
         self.ecc = eccentricity
-        self.mdot = eddington_ratio * eddington_accretion_rate(self.m, accretion_efficiency)
-        # self.qfac = 1.0 if retrograde else Qfit(eccentricity)
-        self.qfac = Qfit(eccentricity, retrograde)
+        self.mdot = eddington_ratio * _eddington_accretion_rate(self.m, accretion_efficiency)
+        self.qfac = Qfit(eccentricity, retro=retrograde)
         self.dlum = luminosity_distance_pc * pc2cm
         self.m1  = self.m  / (1.0 + self.q)
         self.m2  = self.m1 * self.q
         self.dm1 = self.mdot / (1.0 + self.qfac)
         self.dm2 = self.qfac * self.dm1
-        self.rin_md1  = md_inner_edge_risco * risco(self.m1)
-        self.rin_md2  = md_inner_edge_risco * risco(self.m2)
+        self.rin_md1  = md_inner_edge_risco * _risco(self.m1)
+        self.rin_md2  = md_inner_edge_risco * _risco(self.m2)
         self.rout_md1 = 0.27 * self.q**(-0.3) * self.a
         self.rout_md2 = 0.27 * self.q**(+0.3) * self.a
         self.rin_cbd  = cbd_inner_edge_a * self.a
         self.rout_cbd = cbd_outer_edge_a * self.a
-        self.temp1 = disk_temperature_r(self.m1, self.dm1 , self.rin_md1)
-        self.temp2 = disk_temperature_r(self.m2, self.dm2 , self.rin_md2)
-        self.temp3 = disk_temperature_r(self.m , self.mdot, self.rin_cbd)
+        self.temp1 = _disk_temperature_r(self.m1, self.dm1 , self.rin_md1)
+        self.temp2 = _disk_temperature_r(self.m2, self.dm2 , self.rin_md2)
+        self.temp3 = _disk_temperature_r(self.m , self.mdot, self.rin_cbd)
         self.vbary = barycenter_velocity_c * c_cgs
         self.pomega = argument_of_pericenter_deg * (np.pi / 180.)
         self.alphanu = spectral_slope_lnln
@@ -110,21 +113,21 @@ class BinaryAlphaDisk:
 
         nu : observing frequency in Hz
         """
-        return fnu_disk(nu, self.temp1, self.rin_md1, self.rout_md1, self.geometry, self.dlum)
+        return _fnu_disk(nu, self.temp1, self.rin_md1, self.rout_md1, self.geometry, self.dlum)
 
     def fnu_secondary(self, nu):
         """specific flux from the secondary's minidisk at a given frequency
 
         nu : observing frequency in Hz
         """
-        return fnu_disk(nu, self.temp2, self.rin_md2, self.rout_md2, self.geometry, self.dlum)
+        return _fnu_disk(nu, self.temp2, self.rin_md2, self.rout_md2, self.geometry, self.dlum)
 
     def fnu_cbd(self, nu):
         """specific flux from the outer-disk at a given frequency
 
         nu : observing frequency in Hz
         """
-        return fnu_disk(nu, self.temp3, self.rin_cbd, self.rout_cbd, self.geometry, self.dlum)
+        return _fnu_disk(nu, self.temp3, self.rin_cbd, self.rout_cbd, self.geometry, self.dlum)
 
     def fnu_total(self, nu):
         """specific flux of the full system at a given frequency
@@ -161,6 +164,8 @@ class BinaryAlphaDisk:
         fs   : fraction of total light coming from the secondary
                 := 0 when all from primary
                 := 1 when all from secondary
+        lensing : include gravitational lensing magnification
+        boosting : include Doppler boosting magnification
         """
         n  = 2 * np.pi / self.p
         a  = (G_cgs * self.m / n**2)**(1./3.)
@@ -174,7 +179,7 @@ class BinaryAlphaDisk:
         k2 = (n * a2 * sini) / (np.sqrt(1. - self.ecc**2))
         omega = np.pi / 2.
         mean_anomalies = 2 * np.pi * time
-        ecc_anomalies  = np.array([eccentric_anomaly(m, self.ecc) for m in mean_anomalies])
+        ecc_anomalies  = np.array([_eccentric_anomaly(m, self.ecc) for m in mean_anomalies])
         arg = np.sqrt((1. + self.ecc) / (1. - self.ecc)) * np.tan(ecc_anomalies / 2.)
         true_anomalies = 2. * np.arctan(arg)
         fkep  = 1. - (self.ecc * np.cos(ecc_anomalies))
@@ -188,8 +193,8 @@ class BinaryAlphaDisk:
         v2_sqr = np.minimum((m1 / self.m)**2 * G_cgs * self.m * (2. / r - 1. / a) / c_cgs**2, 1. - floor)
         gam1 = 1. /  np.sqrt(1. - v1_sqr)
         gam2 = 1. /  np.sqrt(1. - v2_sqr)
-        dop1 = 1. / (gam1 * (1. - vr1 / c_cgs))**(3. - self.alphanu) if boosting else np.ones(time.shape) # JUST FOR LOCAL COPY / TESTING
-        dop2 = 1. / (gam2 * (1. - vr2 / c_cgs))**(3. - self.alphanu) if boosting else np.ones(time.shape) # JUST FOR LOCAL COPY / TESTING
+        dop1 = 1. / (gam1 * (1. - vr1 / c_cgs))**(3. - self.alphanu) if boosting else np.ones(time.shape)
+        dop2 = 1. / (gam2 * (1. - vr2 / c_cgs))**(3. - self.alphanu) if boosting else np.ones(time.shape)
         x1 = r1 * (np.cos(omega) * np.cos(self.pomega + true_anomalies) - np.sin(omega) * np.sin(self.pomega + true_anomalies) * cosi)
         y1 = r1 * (np.sin(omega) * np.cos(self.pomega + true_anomalies) + np.cos(omega) * np.sin(self.pomega + true_anomalies) * cosi)
         z1 = r1 * (np.sin(self.pomega + true_anomalies) * sini)
@@ -207,7 +212,7 @@ class BinaryAlphaDisk:
         dr = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
         re = np.sqrt(4 * G_cgs * ml * dl / c_cgs**2)
         u  = dr / (re + 1e-14)
-        mlens = (u**2 + 2.) / (u * np.sqrt(u**2 + 4.)) if lensing else np.ones(time.shape) # JUST FOR LOCAL COPY / TESTING
+        mlens = (u**2 + 2.) / (u * np.sqrt(u**2 + 4.)) if lensing else np.ones(time.shape)
         magnification = (1 - fs) * dop1 + fs * dop2 * mlens
         magnification[flip] = (1 - fs) * dop1[flip] * mlens[flip] + fs * dop2[flip]
         return magnification
@@ -215,38 +220,40 @@ class BinaryAlphaDisk:
 
 # Internal methods
 # -------------------------------------------------------------------------
-def eccentric_anomaly(mean_anomaly, e=1.0):
+def _eccentric_anomaly(mean_anomaly, e=1.0):
     m = mean_anomaly
     f = lambda E: E - e * np.sin(E) - m
     E = root_scalar(f, x0=m, x1=m + 0.1, method='secant').root
     return E
 
-def eddington_luminosity(m):
+def _eddington_luminosity(m):
     LEddMsun = 4. * np.pi * G_cgs * Msun_cgs * mp_cgs * c_cgs / sigT_cgs
     return LEddMsun * (m / Msun_cgs)
 
-def eddington_accretion_rate(m, eta):
-    return eddington_luminosity(m) / (eta * c_cgs * c_cgs)  
+def _eddington_accretion_rate(m, eta):
+    return _eddington_luminosity(m) / (eta * c_cgs * c_cgs)  
 
-def risco(m):
+def _risco(m):
     return 6.0 * G_cgs * m / c_cgs**2
 
-def semi_major_axis(p, m):
+def _semi_major_axis(p, m):
     return (p / (2. * np.pi))**(2./3.) * (G_cgs * m)**(1./3.)
 
-def disk_temperature_r(m, dm, r):
+def _disk_temperature_r(m, dm, r):
     return (3. * G_cgs * m * dm / (8. * np.pi * r**3 * sigSB_cgs))**(1/4)
 
-def bnu(nu, r, temp_in, r_in):
+def _bnu(nu, r, temp_in, r_in):
     exarg = hp_cgs * nu / (kb_cgs * temp_in * (r/r_in)**(-3./4.))
-    return 2. * hp_cgs * nu**3 / c_cgs**2 / (np.exp(exarg) - 1.0)
+    if exarg > 700.:
+        return 0.0
+    return 2. * hp_cgs * nu**3 / c_cgs**2 / np.expm1(exarg)
 
-def bnu_disk(r, nueval, temp_in, r_in):
-    return r * bnu(nueval, r, temp_in, r_in)
+def _bnu_disk(r, nueval, temp_in, r_in):
+    return r * _bnu(nueval, r, temp_in, r_in)
 
-def fnu_disk(nu, temp_in, r_in, r_out, cosi, dst):
+def _fnu_disk(nu, temp_in, r_in, r_out, cosi, dst):
     prefac = 2.0 * np.pi * cosi / dst**2
-    return prefac * quad(bnu_disk, r_in, r_out, args=(nu, temp_in, r_in))[0]
+    return prefac * quad(_bnu_disk, r_in, r_out, args=(nu, temp_in, r_in))[0]
 
 
 # User callable functions: public API
@@ -264,7 +271,7 @@ def time(accretion_series:AccretionSeries, period_yr:float):
 
     Return
     ------
-    (ndarry) array of observational time in years with same shape as accretion_series.primary/secondary/total
+    (ndarray) array of observational time in years with same shape as accretion_series.primary/secondary/total
     """
     norb = accretion_series.orbits
     yrs  = norb * period_yr
@@ -285,17 +292,17 @@ def normalized_flux_series(frequency:float,
                            barycenter_velocity_c:float=0.0, 
                            argument_of_pericenter_deg:float=0.0,
                            spectral_slope_lnln:float=-1.0,
-                           geometric_dimming:int=False,
-                           retrograde:int=False,
+                           geometric_dimming:bool=False,
                            boosting=False,
                            lensing=False,
+                           mass_ratio:float=1.0,
                           ):
     """Generate a periodic flux timeseries at given frequency normalized to the total averaged (in the rest frame) flux
 
     Parameters
     ----------
     frequency: 
-        observation frequncey in Hz
+        observation frequency in Hz
     accretion_series:
         an AccretionSeries object (see accretion.py) for binary of supplied eccentricity
         also holds desired number of orbits and fourier modes in the periodic reconstruction
@@ -310,7 +317,7 @@ def normalized_flux_series(frequency:float,
     accretion_efficiency (optional, default=0.1):
         efficiency at which gravitational energy is converted to radiation
     md_inner_edge_risco (optional, default=1.0):
-        inner edge of the primary component's minidisk in units of the isco-radius
+        inner edge of each minidisk in units of its isco-radius
         for integrating the minidisk spectrum
     cbd_inner_edge_a (optional, default=2.0):
         inner edge of the circumbinary disk in units of the binary semi-major axis distance
@@ -324,19 +331,23 @@ def normalized_flux_series(frequency:float,
     barycenter_velocity_c (optional, default=0.0):
         line-of-sight velocity of the system barycenter in units of c (speed of light)
         setting >= 1 may cause problems
-    argumnet_of_pericenter (optional, default=0.0):
+    argument_of_pericenter_deg (optional, default=0.0):
         argument of pericenter for eccentric binary orbit (see D'Orazio, Duffell & Tiede 2024)
     spectral_slope_lnln (optional, default=-1.0):
         dlog(Fnu)/dlog(nu) of the emitting spectrum in the observing band for boosting
     geometric_dimming (optional, default=False):
         include dimming due to the geometrical projection associated with inclination i
         set to True for standard blackbody disk
-    lens_boost (optional, default=False):
-        flag to include Doppler boosting and lensing magnifications
+    boosting (optional, default=False):
+        flag to include Doppler boosting magnifications
+    lensing (optional, default=False):
+        flag to include lensing magnifications
+    mass_ratio (optional, default=1.0):
+        secondary-to-primary mass ratio q (0 < q <= 1); accretion variability is currently calibrated for q=1
 
     Return
     ------
-    (ndarry) normalized periodic flux timeseries with same shape as accretion_series.primary/secondary/total in cgs
+    (ndarray) dimensionless normalized periodic flux timeseries with same shape as accretion_series.primary/secondary/total
     """
     acc = accretion_series
     bad = BinaryAlphaDisk(acc.ecc, 
@@ -354,6 +365,7 @@ def normalized_flux_series(frequency:float,
                           spectral_slope_lnln,
                           geometric_dimming,
                           acc.is_retro,
+                          mass_ratio=mass_ratio,
                         )
     return normalized_flux_series_from_bad(frequency, acc, bad, boosting=boosting, lensing=lensing)
 
@@ -371,17 +383,17 @@ def periodic_flux_series(frequency:float,
                          barycenter_velocity_c:float=0.0, 
                          argument_of_pericenter_deg:float=0.0,
                          spectral_slope_lnln:float=-1.0,
-                         geometric_dimming:int=False,
-                         retrograde:int=False,
+                         geometric_dimming:bool=False,
                          boosting=False,
                          lensing=False,
+                         mass_ratio:float=1.0,
                         ):
     """Generate a periodic flux timeseries at given frequency
 
     Parameters
     ----------
     frequency: 
-        observation frequncey in Hz
+        observation frequency in Hz
     accretion_series:
         an AccretionSeries object (see accretion.py) for binary of supplied eccentricity 
         also holds desired number of orbits and fourier modes in the periodic reconstruction
@@ -396,7 +408,7 @@ def periodic_flux_series(frequency:float,
     accretion_efficiency (optional, default=0.1):
         efficiency at which gravitational energy is converted to radiation
     md_inner_edge_risco (optional, default=1.0):
-        inner edge of the primary component's minidisk in units of the isco-radius
+        inner edge of each minidisk in units of its isco-radius
         for integrating the minidisk spectrum
     cbd_inner_edge_a (optional, default=2.0):
         inner edge of the circumbinary disk in units of the binary semi-major axis distance
@@ -410,19 +422,23 @@ def periodic_flux_series(frequency:float,
     barycenter_velocity_c (optional, default=0.0):
         line-of-sight velocity of the system barycenter in units of c (speed of light)
         setting >= 1 may cause problems
-    argumnet_of_pericenter (optional, default=0.0):
+    argument_of_pericenter_deg (optional, default=0.0):
         argument of pericenter for eccentric binary orbit (see D'Orazio, Duffell & Tiede 2024)
     spectral_slope_lnln (optional, default=-1.0):
         dlog(Fnu)/dlog(nu) of the emitting spectrum in the observing band for boosting
     geometric_dimming (optional, default=False):
         include dimming due to the geometrical projection associated with inclination i
         set to True for standard blackbody disk
-    lens_boost (optional, default=False):
-        flag to include Doppler boosting and lensing magnifications
+    boosting (optional, default=False):
+        flag to include Doppler boosting magnifications
+    lensing (optional, default=False):
+        flag to include lensing magnifications
+    mass_ratio (optional, default=1.0):
+        secondary-to-primary mass ratio q (0 < q <= 1); accretion variability is currently calibrated for q=1
 
     Return
     ------
-    (ndarry) periodic flux timeseries with same shape as accretion_series.primary/secondary/total in cgs
+    (ndarray) periodic flux timeseries with same shape as accretion_series.primary/secondary/total in cgs
     """
     acc = accretion_series
     bad = BinaryAlphaDisk(acc.ecc, 
@@ -440,6 +456,7 @@ def periodic_flux_series(frequency:float,
                           spectral_slope_lnln,
                           geometric_dimming,
                           acc.is_retro,
+                          mass_ratio=mass_ratio,
                         )
     return bad.fnu_total(frequency) * normalized_flux_series_from_bad(frequency, acc, bad, boosting=boosting, lensing=lensing)
 
@@ -457,7 +474,7 @@ def time_from_bad(accretion_series:AccretionSeries, bad:BinaryAlphaDisk):
 
     Return
     ------
-    (ndarry) array of observational time in years with same shape as accretion_series.primary/secondary/total
+    (ndarray) array of observational time in years with same shape as accretion_series.primary/secondary/total
     """
     return time(accretion_series, bad.p / yr2sec)
 
@@ -467,24 +484,26 @@ def normalized_flux_series_from_bad(frequency:float, accretion_series:AccretionS
     Parameters
     ----------
     frequency: 
-        observation frequncey in Hz
+        observation frequency in Hz
     accretion_series:
         an AccretionSeries object (see accretion.py) for binary of supplied eccentricity
         holds desired number of orbits
     bad:
         a BinaryAlphaDisk object containing desired system specifics
-    lens_boost (optional, default=False):
-        flag to include Doppler boosting and lensing magnifications
+    boosting (optional, default=False):
+        flag to include Doppler boosting magnifications
+    lensing (optional, default=False):
+        flag to include lensing magnifications
 
     Return
     ------
-    (ndarry) normalized periodic flux timeseries with same shape as accretion_series.primary/secondary/total in cgs
+    (ndarray) dimensionless normalized periodic flux timeseries with same shape as accretion_series.primary/secondary/total
     """
     acc  = accretion_series
     chi1 = bad.primary_flux_ratio(frequency)
     chi2 = bad.secondary_flux_ratio(frequency)
-    mag1 = bad.lensing_boosting_magnification(acc.time, fs=0, boosting=boosting, lensing=lensing) if bad.i!=0 else 1.0
-    mag2 = bad.lensing_boosting_magnification(acc.time, fs=1, boosting=boosting, lensing=lensing) if bad.i!=0 else 1.0
+    mag1 = bad.lensing_boosting_magnification(acc.time, fs=0, boosting=boosting, lensing=lensing) if (boosting or lensing) else 1.0
+    mag2 = bad.lensing_boosting_magnification(acc.time, fs=1, boosting=boosting, lensing=lensing) if (boosting or lensing) else 1.0
     disk_flux = 1.0 - chi1 - chi2
     dm1 = acc.primary
     dm2 = acc.secondary
@@ -496,18 +515,20 @@ def periodic_flux_series_from_bad(frequency:float, accretion_series:AccretionSer
     Parameters
     ----------
     frequency: 
-        observation frequncey in Hz
+        observation frequency in Hz
     accretion_series:
         an AccretionSeries object (see accretion.py) for binary of supplied eccentricity
         holds desired number of orbits
     bad:
         a BinaryAlphaDisk object containing desired system specifics
-    lens_boost (optional, default=False):
-        flag to include Doppler boosting and lensing magnifications
+    boosting (optional, default=False):
+        flag to include Doppler boosting magnifications
+    lensing (optional, default=False):
+        flag to include lensing magnifications
 
     Return
     ------
-    (ndarry) periodic flux timeseries with same shape as accretion_series.primary/secondary/total in cgs
+    (ndarray) periodic flux timeseries with same shape as accretion_series.primary/secondary/total in cgs
     """
     return bad.fnu_total(frequency) * normalized_flux_series_from_bad(frequency, accretion_series, bad, boosting=boosting, lensing=lensing)
 
@@ -524,7 +545,7 @@ def magnitude_from_flux(specific_flux, zero_point_flux):
 
     Return
     ------
-    (ndarry) periodic apparent magnitude timeseries with same shape as accretion_series.primary/secondary/total in cgs
+    (ndarray) periodic apparent magnitude timeseries with same shape as accretion_series.primary/secondary/total in cgs
     """
     return -2.5 * np.log10(specific_flux / zero_point_flux)
 
@@ -556,7 +577,6 @@ if __name__ == '__main__':
         ax1.set_title(r'e = {:.2f}'.format(acc.ecc))
         plt.show()
         plt.close()
-
 
     # e = 0.7
     # f = vband_nu
@@ -591,4 +611,3 @@ if __name__ == '__main__':
     # plt.legend()
     # plt.savefig('binlite_noramlized_flux_e07.png', dpi=400, bbox_inches='tight', pad_inches=0.05)
     # plt.show()
-
