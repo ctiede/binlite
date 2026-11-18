@@ -1,5 +1,5 @@
 import numpy as np
-import pkg_resources
+from importlib.resources import files
 from functools import cached_property
 
 
@@ -21,18 +21,19 @@ def Qfit(ecc, retro=False):
 
 # Load files at startup/input to optimize series generation
 # =============================================================================
-def get_data_path():
-	return pkg_resources.resource_filename(__name__, 'data/')
+def _load_data(filename):
+	with files(__package__).joinpath('data', filename).open('r') as f:
+		return np.genfromtxt(f)
 
-data_p1_l1 = np.genfromtxt(get_data_path() + 'q1_MdotP_progL1_NFourier60_sigma10P_Nt1000_makeccInput.dat')
-data_p2_l1 = np.genfromtxt(get_data_path() + 'q1_MdotS_progL1_NFourier60_sigma10P_Nt1000_makeccInput.dat')
-data_pT_l1 = np.genfromtxt(get_data_path() + 'q1_MdotTot_progL1_NFourier60_sigma10P_Nt1000_makeccInput.dat')
-data_p1_l5 = np.genfromtxt(get_data_path() + 'q1_MdotP_progL5_NFourier60_sigma10P_Nt1000_makeccInput.dat')
-data_p2_l5 = np.genfromtxt(get_data_path() + 'q1_MdotS_progL5_NFourier60_sigma10P_Nt1000_makeccInput.dat')
-data_pT_l5 = np.genfromtxt(get_data_path() + 'q1_MdotTot_progL5_NFourier60_sigma10P_Nt1000_makeccInput.dat')
-data_r1_l2 = np.genfromtxt(get_data_path() + 'q1_MdotP_RetroL2_Discoe0p8_NFourier30_sigma10P_Nt1000_makeccInput.dat')
-data_r2_l2 = np.genfromtxt(get_data_path() + 'q1_MdotS_RetroL2_Discoe0p8_NFourier30_sigma10P_Nt1000_makeccInput.dat')
-data_rT_l2 = np.genfromtxt(get_data_path() + 'q1_MdotTot_RetroL2_Discoe0p8_NFourier30_sigma10P_Nt1000_makeccInput.dat')
+data_p1_l1 = _load_data('q1_MdotP_progL1_NFourier60_sigma10P_Nt1000_makeccInput.dat')
+data_p2_l1 = _load_data('q1_MdotS_progL1_NFourier60_sigma10P_Nt1000_makeccInput.dat')
+data_pT_l1 = _load_data('q1_MdotTot_progL1_NFourier60_sigma10P_Nt1000_makeccInput.dat')
+data_p1_l5 = _load_data('q1_MdotP_progL5_NFourier60_sigma10P_Nt1000_makeccInput.dat')
+data_p2_l5 = _load_data('q1_MdotS_progL5_NFourier60_sigma10P_Nt1000_makeccInput.dat')
+data_pT_l5 = _load_data('q1_MdotTot_progL5_NFourier60_sigma10P_Nt1000_makeccInput.dat')
+data_r1_l2 = _load_data('q1_MdotP_RetroL2_Discoe0p8_NFourier30_sigma10P_Nt1000_makeccInput.dat')
+data_r2_l2 = _load_data('q1_MdotS_RetroL2_Discoe0p8_NFourier30_sigma10P_Nt1000_makeccInput.dat')
+data_rT_l2 = _load_data('q1_MdotTot_RetroL2_Discoe0p8_NFourier30_sigma10P_Nt1000_makeccInput.dat')
 
 
 # =============================================================================

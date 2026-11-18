@@ -1,1 +1,3 @@
 include binlite/data/*.dat
+include README.md
+include CHANGELOG.md

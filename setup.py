@@ -1,13 +1,13 @@
 from setuptools import setup, find_packages
 
-MAJOR = 1
-MINOR = 1
-MICRO = 1
-VERSION = f"{MAJOR}.{MINOR}.{MICRO}"
+MAJOR = 2
+MINOR = 0
+PATCH = 0
+VERSION = f"{MAJOR}.{MINOR}.{PATCH}.dev0"
 
 NAME             = "binlite"
-AUTHOR           = "Christopher Tiede & Daniel D'Orazio"
-AUTHRO_EMAIL     = "22056557+ctiede@users.noreply.github.com"
+AUTHOR           = "Christopher Tiede, Daniel D'Orazio, and Paul Duffell"
+AUTHOR_EMAIL     = "22056557+ctiede@users.noreply.github.com"
 DESCRIPTION      = "Rapidly generate periodic lightcurves of accreting binaries"
 LONG_DESCRIPTION = "Generate photometric variability templates for equal mass \
                     binaries in co-planar gaseous disks, spanning a continuous \
@@ -22,7 +22,7 @@ def setup_package():
         version = VERSION,
         author  = AUTHOR,
         maintainer = AUTHOR,
-        author_email = AUTHRO_EMAIL,
+        author_email = AUTHOR_EMAIL,
         description  = DESCRIPTION,
         long_description = LONG_DESCRIPTION,
         include_package_data = True,
@@ -31,14 +31,13 @@ def setup_package():
         license = "MIT",
         platforms = ['Any'],
         url = GIT_URL,
-        install_requires = ['setuptools', 'numpy', 'scipy'],
+        install_requires = ['numpy', 'scipy'],
     )
     setup(**metadata)
 
 # =============================================================================
 if __name__ == "__main__":
-    # Running the build is as simple as: 
-    # >> python setup.py sdist bdist_wheel
-    # This command includes building the required Python extensions
+    # Build source and wheel distributions with:
+    # >> python -m build
     setup_package()
 
