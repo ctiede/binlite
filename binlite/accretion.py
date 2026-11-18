@@ -51,6 +51,8 @@ class AccretionSeries:
 		number of orbital periods to generate
 	retrograde (optional, default=False):
 		whether the binary should be regarded as retrograde to the CBD (otherwise prograde assumed)
+	normalize (optional, default=False):
+		normalize all accretion series by the mean total accretion rate
 
 	Public attributes
 	-----------------
@@ -59,11 +61,12 @@ class AccretionSeries:
 	secondary : periodic accretion series for the secondary component (in units of viscous feeding rate)
 	total     : fitted total accretion rate series onto the binary (in units of viscous feeding rate)
 	"""
-	def __init__(self, eccentricity:float, n_modes:int=20, n_orbits:int=10, retrograde:bool=False):
+	def __init__(self, eccentricity:float, n_modes:int=20, n_orbits:int=10, retrograde:bool=False, normalize:bool=False):
 		self.ecc = eccentricity
 		self.modes = n_modes
 		self.orbits = n_orbits
 		self.is_retro = retrograde
+		self.normalize = normalize
 
 		if not isinstance(n_modes, (int, np.integer)) or not 1 <= n_modes <= 29:
 			raise ValueError("n_modes must be an integer between 1 and 29")
@@ -150,7 +153,7 @@ class AccretionSeries:
 		dm = self._compute_signal_mode(self.data1, self.mode)
 		idx = int(len(dm) * self.remainder)
 		base = np.tile(dm, self.repeats)
-		return np.concatenate([base, dm[:idx]])
+		return np.concatenate([base, dm[:idx]]) / self._normalization
 
 	@cached_property
 	def secondary(self):
@@ -162,7 +165,7 @@ class AccretionSeries:
 		dm = self._compute_signal_mode(self.data2, self.mode)
 		idx = int(len(dm) * self.remainder)
 		base = np.tile(dm, self.repeats)
-		return np.concatenate([base, dm[:idx]])
+		return np.concatenate([base, dm[:idx]]) / self._normalization
 
 	@cached_property
 	def total(self):
@@ -174,10 +177,18 @@ class AccretionSeries:
 		dm = self._compute_signal_mode(self.dataT, self.mode)
 		idx = int(len(dm) * self.remainder)
 		base = np.tile(dm, self.repeats)
-		return np.concatenate([base, dm[:idx]])
+		return np.concatenate([base, dm[:idx]]) / self._normalization
 
 	# Internal methods
 	# -------------------------------------------------------------------------
+	@cached_property
+	def _normalization(self):
+		if self.normalize:
+			dm = self._compute_signal_mode(self.dataT, self.mode)
+			return np.mean(dm)
+		else:
+			return 1.0
+
 	def _compute_signal_mode(self, data, m):
 		fs = []
 		i1 = min(np.searchsorted(self.e_smpls, self.ecc, side='right') - 1, len(self.e_smpls) - 2)
@@ -232,8 +243,8 @@ if __name__ == '__main__':
 	for x in np.arange(0.1, 0.9, 0.2):
 		print('ecc : {:.2f}'.format(x))
 		fig, [ax1, ax2] = plt.subplots(1, 2, sharey=True, figsize=[8,4])
-		plot_series(ax1, AccretionSeries(x, n_modes=29, n_orbits=5, retrograde=False))
-		plot_series(ax2, AccretionSeries(x, n_modes=29, n_orbits=5, retrograde=True))
+		plot_series(ax1, AccretionSeries(x, n_modes=29, n_orbits=5, retrograde=False, normalize=True))
+		plot_series(ax2, AccretionSeries(x, n_modes=29, n_orbits=5, retrograde=True , normalize=True))
 		for ax in [ax1, ax2]:
 			ax.set_xlim([0.0, 4.0])
 			ax.set_ylim([0.0, 4.0])
